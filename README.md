@@ -30,8 +30,6 @@ omarchy-shell shell rescanPlugins
 omarchy plugin enable io.github.qempexe.window-dust
 ```
 
-### Put the icon in the bar
-
 Add the widget to your bar layout in `~/.config/omarchy/shell.json`, under `bar` → `layout` → the section you want (`left`, `center` or `right`):
 
 ```json
@@ -168,18 +166,11 @@ To check the manifest:
 omarchy plugin validate .
 ```
 
-To run the unit tests (no Omarchy needed, no dependencies):
-
-```bash
-node tests/test-model.js
-```
-
 To lint the QML:
 
 ```bash
 qmllint -I "$OMARCHY_PATH/shell" BarWidget.qml Overlay.qml Panel.qml Chip.qml SettingStepper.qml
 ```
-
 
 ## Updating
 
@@ -196,7 +187,7 @@ The first command pulls the latest version. The second is required because the s
 omarchy plugin remove io.github.qempexe.window-dust
 ```
 
-This does not edit `shell.json`: remove the `{ "id": "io.github.qempexe.window-dust" }` entry from your bar layout by hand. Then restart the shell:
+If this does not edit `shell.json`: remove the `{ "id": "io.github.qempexe.window-dust" }` entry from your bar layout by hand. Then restart the shell:
 
 ```bash
 omarchy restart shell
