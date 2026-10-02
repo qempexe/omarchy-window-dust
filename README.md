@@ -20,7 +20,7 @@ Click the broom icon in the bar to see which windows are dusty, tune how fast du
 ## Install
 
 ```bash
-omarchy plugin add https://github.com/qempexe/window-dust.git --enable --yes
+omarchy plugin add https://github.com/qempexe/omarchy-window-dust.git --enable --yes
 ```
 
 Or by hand: copy this directory to `~/.config/omarchy/plugins/io.github.qempexe.window-dust/` (the folder name must match the plugin id), then:
