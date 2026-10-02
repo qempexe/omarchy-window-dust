@@ -136,6 +136,7 @@ Panel {
                 anchors.rightMargin: Style.space(8)
                 anchors.verticalCenter: parent.verticalCenter
                 text: modelData.cls + (modelData.title ? "  " + modelData.title : "")
+                textFormat: Text.PlainText
                 elide: Text.ElideRight
                 color: root.barForeground
                 font.family: root.dustFont
@@ -527,6 +528,7 @@ Panel {
           Text {
             width: parent.width
             text: "Never dusted: " + (root.dustCfg.exempt.length > 0 ? root.dustCfg.exempt.join(", ") : "nothing")
+            textFormat: Text.PlainText
             wrapMode: Text.WordWrap
             color: root.barForeground
             opacity: 0.7
