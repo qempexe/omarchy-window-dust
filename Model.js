@@ -29,8 +29,8 @@ var DEFAULTS = {
   awayMinutes: 5,
   exempt: ["mpv", "vlc", "spotify"],
 
-  particles: true,          // master switch for the overlay
-  particleDensity: 0.22,    // particles per 1000 px² of window area
+  particles: true,
+  particleDensity: 0.22,
   particleMax: 240,
   particleSizeMin: 0.8,
   particleSizeMax: 2.6,
@@ -39,7 +39,6 @@ var DEFAULTS = {
   particleTwinkle: true,
   scatterOnFocus: true,
 
-  // Effect kinds
   effectMotes: true,
   effectGrain: true,
   effectSmudges: true,
@@ -244,8 +243,6 @@ function isExempt(client, exempt) {
   return exempt.indexOf(cls) >= 0;
 }
 
-// One entry per window, dustiest first. Carries geometry + workspace so the
-// overlay can place particles and skip windows on inactive workspaces.
 function compute(last, clients, clock, cfg) {
   var graceSec = cfg.dustAfterMinutes * 60;
   var rampSec = cfg.settleMinutes * 60;
@@ -319,7 +316,9 @@ function spawnParticles(count, x, y, w, h, cfg) {
       p.corner = Math.floor(Math.random() * 4);
       p.x = (p.corner === 0 || p.corner === 2) ? x : x + w;
       p.y = (p.corner < 2) ? y : y + h;
-      p.size = randRange(22, 52);
+      
+      var maxSize = Math.min(w, h) * 0.35;
+      p.size = Math.min(randRange(22, 52), maxSize);
       p.targetAlpha = randRange(0.18, 0.4);
       p.twinkleSpeed = 0;
       p.vx = 0; p.vy = 0;
@@ -360,7 +359,6 @@ function stepParticles(particles, dt, x, y, w, h, dustLevel, cfg) {
     var p = particles[i];
     p.age += dt;
 
-    // Scatter impulse decays exponentially.
     if (p.scatterTime > 0) {
       p.scatterTime = Math.max(0, p.scatterTime - dt);
       p.x += p.scatterVx * dt;
@@ -370,7 +368,6 @@ function stepParticles(particles, dt, x, y, w, h, dustLevel, cfg) {
       p.scatterVy *= damp;
     }
 
-    // Kind-specific motion.
     if (p.kind === "cobweb") {
       // Static.
     } else if (p.kind === "streak") {
@@ -380,7 +377,6 @@ function stepParticles(particles, dt, x, y, w, h, dustLevel, cfg) {
         p.x = x + Math.random() * w;
       }
     } else if (p.kind === "grain") {
-      // Barely-there jitter.
       p.x += p.vx * dt;
       p.y += p.vy * dt;
       if (p.x < x) p.x = x + w;
@@ -423,6 +419,49 @@ function scatterParticles(particles, cx, cy, strength) {
     p.scatterVx += (dx / d) * f;
     p.scatterVy += (dy / d) * f;
     p.scatterTime = 0.9;
+  }
+}
+
+function remapParticles(particles, oldX, oldY, oldW, oldH, newX, newY, newW, newH) {
+  if (oldW <= 0 || oldH <= 0) {
+    // Degenerate old bounds: re-seed uniformly inside the new rect.
+    for (var k = 0; k < particles.length; k++) {
+      var q = particles[k]
+      if (q.kind === "cobweb") {
+        q.x = (q.corner === 0 || q.corner === 2) ? newX : newX + newW
+        q.y = (q.corner < 2) ? newY : newY + newH
+        var maxSz = Math.min(newW, newH) * 0.35
+        q.size = Math.max(8, Math.min(q.size, maxSz))
+      } else {
+        q.x = newX + Math.random() * newW
+        q.y = newY + Math.random() * newH
+      }
+    }
+    return
+  }
+  var sx = newW / oldW
+  var sy = newH / oldH
+  var shortSide = Math.min(newW, newH)
+  for (var i = 0; i < particles.length; i++) {
+    var p = particles[i]
+    if (p.kind === "cobweb") {
+      // Re-anchor to the new corner.
+      p.x = (p.corner === 0 || p.corner === 2) ? newX : newX + newW
+      p.y = (p.corner < 2) ? newY : newY + newH
+      // Rescale the web's radius with the window, keeping it proportional to
+      // the smaller dimension. Clamped both ways: never below 8 px
+      // (unreadable), never above 35% of the shorter side.
+      var scaled = p.size * Math.min(sx, sy)
+      p.size = Math.max(8, Math.min(scaled, shortSide * 0.35))
+    } else {
+      p.x = newX + (p.x - oldX) * sx
+      p.y = newY + (p.y - oldY) * sy
+      // Reset streaks that ended up past the (possibly shorter) bottom.
+      if (p.kind === "streak" && p.y > newY + newH) {
+        p.y = newY
+        p.x = newX + Math.random() * newW
+      }
+    }
   }
 }
 
