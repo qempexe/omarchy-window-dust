@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.qempexe.window-dust",
+  "name": "Window Dust",
+  "version": "0.1.0",
+  "author": "qempexe",
+  "license": "MIT",
+  "description": "Windows you have not touched slowly fade and gather real dust motes; focusing one blows them clean. Fully configurable.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Window Dust",
+    "category": "Desktop",
+    "allowMultiple": false,
+    "defaultSection": "right"
+  }
+}
