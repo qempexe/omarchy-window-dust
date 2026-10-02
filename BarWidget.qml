@@ -27,9 +27,10 @@ BarWidget {
   property var particleSets: ({})
   property var windowGeom: ({})
 
-  // Workspace awareness: which windows are actually on screen right now.
-  property var activeWorkspaceByMonitor: ({})   // monitor id -> workspace id
-  property var visibleAddresses: ({})           // address -> true if visible
+  // Workspace + multi-monitor awareness
+  property var activeWorkspaceByMonitor: ({})
+  property var visibleAddresses: ({})
+  property var monitorInfoByOutput: ({})   // output name -> Hyprland monitor record
 
   readonly property real dustyThreshold: 0.25
 
@@ -95,17 +96,28 @@ BarWidget {
   function onMonitors(text) {
     var list
     try { list = JSON.parse(text) } catch (err) { return }
-    var m = {}
+    var byId = {}
+    var byName = {}
     for (var i = 0; i < list.length; i++) {
       var mon = list[i]
-      m[mon.id] = (mon.activeWorkspace && typeof mon.activeWorkspace.id === "number")
+      var ws = (mon.activeWorkspace && typeof mon.activeWorkspace.id === "number")
         ? mon.activeWorkspace.id : -1
+      byId[mon.id] = ws
+      byName[mon.name] = {
+        id: mon.id,
+        x: mon.x,
+        y: mon.y,
+        w: mon.width,
+        h: mon.height,
+        scale: mon.scale,
+        activeWorkspace: ws
+      }
     }
-    activeWorkspaceByMonitor = m
+    activeWorkspaceByMonitor = byId
+    monitorInfoByOutput = byName
     refreshVisibility()
   }
 
-  // Mark which window addresses are on their monitor's active workspace.
   function refreshVisibility() {
     var v = {}
     for (var i = 0; i < dustEntries.length; i++) {
@@ -153,8 +165,9 @@ BarWidget {
     var nextGeom = {}
     for (var i = 0; i < dustEntries.length; i++) {
       var e = dustEntries[i]
-      nextGeom[e.address] = { x: e.x, y: e.y, w: e.w, h: e.h,
-                              monitor: e.monitor, workspace: e.workspace }
+      var oldG = windowGeom[e.address]
+      var newG = { x: e.x, y: e.y, w: e.w, h: e.h,
+                   monitor: e.monitor, workspace: e.workspace }
 
       var set = particleSets[e.address]
       var want = Model.particleCount(e.w, e.h, dustConfig)
@@ -163,17 +176,27 @@ BarWidget {
         set = want > 0
           ? Model.spawnParticles(want, e.x, e.y, e.w, e.h, dustConfig)
           : []
-      } else if (set.length !== want) {
-        if (want === 0) {
-          set = []
-        } else if (set.length < want) {
-          var more = Model.spawnParticles(want - set.length, e.x, e.y, e.w, e.h, dustConfig)
-          set = set.concat(more)
-        } else {
-          set = set.slice(0, want)
+      } else {
+        // If the window moved or resized since last frame, remap particles
+        // proportionally into the new rect before growing/trimming.
+        if (oldG && (oldG.x !== e.x || oldG.y !== e.y
+                     || oldG.w !== e.w || oldG.h !== e.h)) {
+          Model.remapParticles(set, oldG.x, oldG.y, oldG.w, oldG.h,
+                               e.x, e.y, e.w, e.h)
+        }
+        if (set.length !== want) {
+          if (want === 0) {
+            set = []
+          } else if (set.length < want) {
+            var more = Model.spawnParticles(want - set.length, e.x, e.y, e.w, e.h, dustConfig)
+            set = set.concat(more)
+          } else {
+            set = set.slice(0, want)
+          }
         }
       }
       nextSets[e.address] = set
+      nextGeom[e.address] = newG
     }
     particleSets = nextSets
     windowGeom = nextGeom
@@ -185,7 +208,6 @@ BarWidget {
       var g = windowGeom[addr]
       if (!g) { next[addr] = particleSets[addr]; continue }
 
-      // Skip stepping for windows not on their monitor's active workspace.
       if (visibleAddresses[addr] !== true) {
         next[addr] = particleSets[addr]
         continue
@@ -290,6 +312,7 @@ BarWidget {
     monitorsProc.running = true
     tickTimer.start()
     particleTimer.start()
+    heartbeatTimer.start()
   }
 
   Process { id: stateWriter }
@@ -342,16 +365,30 @@ BarWidget {
     onTriggered: root.stepAllParticles(0.033)
   }
 
-  Timer { id: fallbackStart; interval: 2000; onTriggered: root.start() }
-
+  // Fast, debounced refresh after any relevant Hyprland event.
   Timer {
     id: refreshTimer
-    interval: 400
+    interval: 200
     onTriggered: {
       if (!clientsProc.running) clientsProc.running = true
       if (!monitorsProc.running) monitorsProc.running = true
     }
   }
+
+  // Fallback poll: catches geometry changes that don't emit an event (e.g.
+  // a resize from the bottom or right edge, where the position is unchanged).
+  Timer {
+    id: heartbeatTimer
+    interval: 1500
+    running: false
+    repeat: true
+    onTriggered: {
+      if (!clientsProc.running) clientsProc.running = true
+      if (!monitorsProc.running) monitorsProc.running = true
+    }
+  }
+
+  Timer { id: fallbackStart; interval: 2000; onTriggered: root.start() }
 
   Connections {
     target: Hyprland
@@ -367,17 +404,27 @@ BarWidget {
         break
       case "openwindow":
       case "closewindow":
+      case "movewindow":
       case "movewindowv2":
+      case "changefloatingmode":
+      case "fullscreen":
+      case "minimize":
         refreshTimer.restart()
         break
       case "workspace":
       case "workspacev2":
       case "focusedmon":
+      case "focusedmonv2":
       case "moveworkspace":
       case "moveworkspacev2":
-        // Active workspace changed — refresh monitors so effects update fast.
         if (!monitorsProc.running) monitorsProc.running = true
         if (!clientsProc.running) clientsProc.running = true
+        break
+      case "monitoradded":
+      case "monitoraddedv2":
+      case "monitorremoved":
+        refreshTimer.restart()
+        if (!monitorsProc.running) monitorsProc.running = true
         break
       case "configreloaded":
         root.applied = ({})
@@ -399,7 +446,6 @@ BarWidget {
     }
   }
 
-  // ---- Overlays ---------------------------------------------------------
   Variants {
     model: Quickshell.screens
     delegate: Overlay {
@@ -409,7 +455,6 @@ BarWidget {
     }
   }
 
-  // ---- UI ---------------------------------------------------------------
   Loader {
     id: panelLoader
     active: true

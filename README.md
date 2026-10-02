@@ -180,6 +180,16 @@ To lint the QML:
 qmllint -I "$OMARCHY_PATH/shell" BarWidget.qml Overlay.qml Panel.qml Chip.qml SettingStepper.qml
 ```
 
+
+## Updating
+
+```bash
+omarchy plugin update io.github.qempexe.window-dust
+omarchy restart shell
+```
+The first command pulls the latest version. The second is required because the shell doesn't reliably reload changed QML on its own - without it, you'll still be running the old code.
+
+
 ## Uninstall
 
 ```bash

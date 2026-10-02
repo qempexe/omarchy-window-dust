@@ -17,11 +17,28 @@ PanelWindow {
   WlrLayershell.exclusiveZone: -1
   color: "transparent"
 
-  // Fully click-through.
   mask: Region {}
 
-  readonly property real screenX: overlay.monitor ? overlay.monitor.x : 0
-  readonly property real screenY: overlay.monitor ? overlay.monitor.y : 0
+  // ---- Monitor identity -------------------------------------------------
+  // The Wayland output name from Quickshell ("eDP-1", "HDMI-A-1", …). This is
+  // the stable key we match against Hyprland's monitor list.
+  readonly property string outputName: overlay.monitor ? overlay.monitor.name : ""
+
+  // The Hyprland monitor record for this overlay, looked up by output name.
+  // Gives us id, position, and size from a single authoritative source
+  // (hyprctl monitors) instead of mixing Quickshell and Hyprland coordinates.
+  readonly property var hyprMonitor: {
+    var info = overlay.hostWidget ? overlay.hostWidget.monitorInfoByOutput : ({})
+    return info[overlay.outputName] || null
+  }
+
+  // Hyprland monitor id, used to filter windows. -1 means "unknown monitor",
+  // in which case nothing is drawn — safer than drawing on the wrong screen.
+  readonly property int hyprMonitorId: overlay.hyprMonitor ? overlay.hyprMonitor.id : -1
+
+  // Origin of this overlay in Hyprland's global coordinate space.
+  readonly property real screenX: overlay.hyprMonitor ? overlay.hyprMonitor.x : 0
+  readonly property real screenY: overlay.hyprMonitor ? overlay.hyprMonitor.y : 0
 
   readonly property var dustRgb: {
     var c = overlay.hostWidget ? overlay.hostWidget.dustConfig.dustColor : "8b8378";
@@ -46,30 +63,35 @@ PanelWindow {
       var ctx = getContext("2d")
       ctx.clearRect(0, 0, width, height)
 
+      // If we don't know our Hyprland monitor yet (e.g. right after hotplug
+      // and before the next monitor poll), draw nothing. This is the safety
+      // net against drawing windows that belong to another screen.
+      if (overlay.hyprMonitorId < 0) return
+
       var col = overlay.dustRgb
       var addrs = Object.keys(particleSets)
 
       for (var a = 0; a < addrs.length; a++) {
         var addr = addrs[a]
 
-        // Skip windows that aren't on the currently active workspace of their
-        // monitor. This is what makes effects disappear when you switch.
+        // Must be on the active workspace.
         if (visibleAddresses[addr] !== true) continue
 
         var g = windowGeom[addr]
         if (!g) continue
+
+        // Must be on *this* overlay's monitor. We filter by Hyprland's
+        // monitor id rather than relying on coordinate overlap, so a window
+        // on another monitor never contributes particles here.
+        if (g.monitor !== overlay.hyprMonitorId) continue
+
         var set = particleSets[addr]
         if (!set || set.length === 0) continue
 
-        // Convert window rect to local overlay coords.
+        // Local coords for this overlay.
         var wx = g.x - overlay.screenX
         var wy = g.y - overlay.screenY
 
-        // Quick reject if the window is entirely off this overlay.
-        if (wx > width + 4 || wy > height + 4) continue
-        if (wx + g.w < -4 || wy + g.h < -4) continue
-
-        // Clip everything to the window rect.
         ctx.save()
         ctx.beginPath()
         ctx.rect(wx, wy, g.w, g.h)
@@ -97,13 +119,11 @@ PanelWindow {
       }
 
       if (p.kind === "cobweb") {
-        // Thin arcs + radial spokes anchored at the corner.
         var dirX = (p.corner === 0 || p.corner === 2) ? 1 : -1
         var dirY = (p.corner < 2) ? 1 : -1
         ctx.strokeStyle = rgba(alpha * 0.7)
         ctx.lineWidth = 0.6
 
-        // Spokes
         for (var s = 0; s < 4; s++) {
           var ang = (Math.PI / 2) * (s / 3)
           var ex = px + dirX * Math.cos(ang) * p.size
@@ -113,7 +133,6 @@ PanelWindow {
           ctx.lineTo(ex, ey)
           ctx.stroke()
         }
-        // Concentric arcs
         for (var rr = 0.45; rr <= 1.001; rr += 0.28) {
           var r = p.size * rr
           var a0, a1
@@ -127,7 +146,6 @@ PanelWindow {
         }
 
       } else if (p.kind === "smudge") {
-        // Soft radial blob.
         var grad = ctx.createRadialGradient(px, py, 0, px, py, p.size)
         grad.addColorStop(0, rgba(alpha * 0.6))
         grad.addColorStop(1, rgba(0))
@@ -146,19 +164,18 @@ PanelWindow {
         ctx.stroke()
 
       } else if (p.kind === "grain") {
-        // Sharp tiny dot, no halo.
         ctx.fillStyle = rgba(alpha)
         ctx.beginPath()
         ctx.arc(px, py, p.size, 0, Math.PI * 2)
         ctx.fill()
 
-      } else { // mote
+      } else {
+        // mote
         ctx.fillStyle = rgba(alpha)
         ctx.beginPath()
         ctx.arc(px, py, p.size, 0, Math.PI * 2)
         ctx.fill()
 
-        // Halo
         ctx.beginPath()
         ctx.arc(px, py, p.size * 2.2, 0, Math.PI * 2)
         ctx.fillStyle = rgba(alpha * 0.18)
