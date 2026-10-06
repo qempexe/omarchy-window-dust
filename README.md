@@ -4,6 +4,8 @@ An [Omarchy](https://omarchy.org) shell bar widget that lets untouched windows s
 
 Click the broom icon in the bar to see which windows are dusty, tune how fast dust settles, and choose which effects appear: fading, tinted borders, drifting motes, static grain, grime smudges, falling streaks and corner cobwebs.
 
+![Window Dust preview](preview.png)
+
 ## Features
 
 - **Fade + tint**: each untouched window's inactive opacity drops from 95% toward a floor you choose, and its inactive border is tinted a warm grey. Focus it and it snaps clean.
