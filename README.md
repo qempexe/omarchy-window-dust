@@ -10,14 +10,19 @@ Click the broom icon in the bar to see which windows are dusty, tune how fast du
 
 - **Fade + tint**: each untouched window's inactive opacity drops from 95% toward a floor you choose, and its inactive border is tinted a warm grey. Focus it and it snaps clean.
 - **Particle overlay**: a click-through layer-shell canvas per monitor draws real dust on top of each window, clipped to the window rect so nothing bleeds onto the desktop.
-- **Five effect kinds**: motes (drifting specks with a faint halo), grain (tiny sharp static flecks), smudges (large soft grime blobs), streaks (falling drips) and cobwebs (thin arcs in a window corner, only at high dust). Each can be toggled independently.
+- **Eight effect kinds**, each toggled independently:
+  - **dust layer**: a fine powder over the whole window, with a haze that is thicker toward the bottom and piles up in the corners. It builds up with the dust level;
+  - **spiders**: small spiders that crawl across a dusty window, stop, turn and carry on, and scurry away from the point you focus;
+  - **fibres**: loose strands of lint that drift and turn slowly;
+  - **motes** (drifting specks with a faint halo), **grain** (tiny sharp static flecks), **smudges** (large soft grime blobs), **streaks** (falling drips) and **cobwebs** (thin arcs in a window corner, only at high dust).
+- **Fullscreen aware**: while a window is fullscreen, the dust on that monitor disappears completely (the overlay is hidden, so it never covers the fullscreen window) and comes back, where it was, when you leave fullscreen. Other monitors are unaffected.
 - **Workspace aware**: effects only appear on the active workspace of each monitor. Switch away and they vanish; switch back and they resume exactly where they were.
 - **Focus scatter**: focusing a window blows its particles outward before the window snaps clean.
 - **Dust clock**: only advances while you're actually at the machine, so coming back after a night away doesn't bury everything.
 - **Exempt classes**: apps like `mpv` and `spotify` never gather dust by default.
 - **Presets**: Gentle, Normal, Dramatic, Demo (2 min).
-- **Keyboard friendly**: everything is reachable from the panel; `Esc` closes it.
-- Styled with Omarchy's own theme tokens, so it follows your theme and font.
+- **Keyboard friendly**: everything is reachable from the panel; `Esc` closes it, and so does a click outside.
+- **Themed**: Follow Omarchy (the bar's own colours with your theme's accent), Custom (starts from a warm brown) or Monochrome.
 
 ## Install
 
@@ -52,7 +57,7 @@ Click the broom icon, open **Settings**, pick the **Demo (2 min)** preset, then 
 
 | Action | How |
 | --- | --- |
-| Open / close the panel | Left-click the broom icon |
+| Open / close the panel | Left-click the broom icon, `Esc` or a click outside to close |
 | Dust everything off (reset all windows) | Right-click the icon, or use "Dust everything off" in the panel |
 | Pause / resume | Middle-click the icon, or use "Pause"/"Resume" in the panel |
 | Focus a dusty window | Click its row in the Windows tab (particles scatter first) |
@@ -63,7 +68,16 @@ The number next to the icon is how many windows are noticeably dusty.
 
 ## Settings
 
-Open **Settings** in the panel. Everything applies instantly and is saved to `~/.config/omarchy/window-dust.json` (you can also edit that file by hand; it is re-read whenever you open the panel, and typos are ignored).
+Open **Settings** in the panel. Everything applies instantly and is saved to `~/.config/omarchy/window-dust.json`. You can also edit that file by hand: it is watched, so changes apply live, and typos are ignored. Only the settings you changed are written; the rest use their defaults.
+
+### Theme and bar
+
+| Setting | File key | Default | Meaning |
+| --- | --- | --- | --- |
+| Colours | `theme` | follow | `follow`, `custom`, `mono` (an old `brown` is read as `custom`) |
+| Custom colours | `customBackground`, `customText`, `customAccent` | brown palette | `#rrggbb`, used when Colours is Custom |
+| Bar icon | `barIcon` | broom glyph | Text or glyph shown in the bar (up to 8 characters) |
+| Show dusty count | `barShowCount` | true | The number of dusty windows next to the icon |
 
 ### Timing
 
@@ -82,9 +96,9 @@ Open **Settings** in the panel. Everything applies instantly and is saved to `~/
 | Fades down to | `minOpacity` | 0.55 | Inactive opacity when fully dusty |
 | Dust colour | `dustColor` | 8b8378 | Colour for particles and border tint, any `RRGGBB` hex |
 | Border tint | `tintBorder` | true | Tint the border as well as fading |
-| Effect types | `effectMotes`, `effectGrain`, `effectSmudges`, `effectStreaks`, `effectCobwebs` | all true | Toggle each particle kind independently |
+| Effect types | `effectPowder`, `effectSpiders`, `effectFibers`, `effectMotes`, `effectGrain`, `effectSmudges`, `effectStreaks`, `effectCobwebs` | all true | Toggle each effect independently |
 
-If all five effect types are off, no overlay is drawn — only the fade and border tint remain.
+If every effect type is off, nothing is drawn: only the fade and border tint remain.
 
 ### Particles
 
@@ -97,7 +111,10 @@ If all five effect types are off, no overlay is drawn — only the fade and bord
 | Drift speed | `particleDrift` | 4 | Base random-walk speed in px/s |
 | Brightness | `particleOpacity` | 0.75 | Multiplier on top of the dust level |
 | Twinkle | `particleTwinkle` | true | Subtle brightness pulse per particle |
-| Scatter on focus | `scatterOnFocus` | true | Blow particles outward when a window is focused |
+| Scatter on focus | `scatterOnFocus` | true | Blow particles outward (and send spiders running) when a window is focused |
+| Dust layer amount | `powderDensity` | 8 | Fine specks per 1000 px² at full dust (capped at 7000 per window) |
+| Spiders per window | `spiderMax` | 2 | The most spiders a large window can have; small windows get fewer, tiny ones none |
+| Hide in fullscreen | `hideOnFullscreen` | true | No dust on a monitor while one of its windows is fullscreen |
 
 ### Away and exempt
 
@@ -126,19 +143,23 @@ Values are clamped to sensible ranges, so a bad edit can't break anything.
 - One click-through layer-shell overlay (`WlrLayer.Overlay`, namespace `window-dust-overlay`) is created per monitor. A ~30 Hz timer advances every particle, clipping each window's set to that window's rect at paint time.
 - Which windows are drawn is decided by comparing each window's workspace id (from `hyprctl -j clients`) against each monitor's active workspace id (from `hyprctl -j monitors`). Hyprland fires `workspacev2`, `focusedmon`, and `moveworkspacev2` when the active workspace changes, so effects vanish within a frame of switching.
 - Particle state survives workspace switches — switch away and back, and the dust resumes exactly where it was, rather than re-spawning.
+- Settings live in `SettingsStore.qml`: a copy in memory (instant) saved to `window-dust.json`, with the file watched for hand edits. Nothing is sent to `omarchy bar set`, which would reload the whole shell.
+- The panel is its own popup window (`Panel.qml`). `Foreground.qml` is a hidden probe that hands the bar's own foreground and background colours to it, so Follow Omarchy matches a light or dark bar exactly.
+- Changes that only affect looks (theme, bar icon) never restart the dust engine; changes to anything else respawn the particles and re-apply the window fades once.
 - Disabling or removing the plugin restores every window it touched.
 
 ## Data and privacy
 
 - Your settings live in `~/.config/omarchy/window-dust.json` and the dust clock + per-window last-touched timestamps live in `~/.local/state/omarchy-window-dust/state.json`. Nothing else is stored.
-- The only external process it runs is `hyprctl` (to read `clients` and `monitors`). No network access.
-- Plugins run unsandboxed in the shell process. This one reads and writes only its own two files.
+- The only external process it runs is `hyprctl` (to read `clients` and `monitors`), plus a shell `cat` for the dust state. It also reads, never writes, `~/.config/omarchy/current/theme/colors.toml` for the theme accent. No network access.
+- Plugins run unsandboxed in the shell process. This one writes only its own two files.
 
 ## Limitations
 
 - Effects are clipped to each window rect. There's no dust on the desktop wallpaper or in gaps between windows.
 - The particle overlay is drawn per monitor; if the overlay fails to spawn on your Quickshell build, the fade and border tint still work. Check `qs log -p "$OMARCHY_PATH/shell" --tail 100` for `window-dust-overlay` warnings.
-- Cobwebs only appear above ~50% dust; below that only motes, grain, smudges and streaks are drawn.
+- Cobwebs only appear above ~50% dust, and spiders above ~25%; below that only the other effects are drawn.
+- Only true fullscreen hides the dust. A maximised window (which keeps the bar and gaps) still shows it.
 - The dust clock is not wall-clock by default, so a window left for 48 h while you're away for most of it won't be as dusty as the raw time suggests. Turn **Pause dust while away** off if you want wall-clock semantics.
 
 ## Files
@@ -146,13 +167,15 @@ Values are clamped to sensible ranges, so a bad edit can't break anything.
 | File | Purpose |
 | --- | --- |
 | `manifest.json` | Omarchy plugin manifest |
-| `BarWidget.qml` | Bar icon, dust engine, overlay spawning |
+| `BarWidget.qml` | Bar icon, dust engine, overlay spawning, settings and theme |
 | `Overlay.qml` | Full-screen click-through particle canvas (one per monitor) |
-| `Panel.qml` | The popup panel, window list and settings |
-| `Model.js` | Pure logic: settings, dust maths, particles, Lua dispatchers |
-| `Chip.qml`, `SettingStepper.qml` | Small UI pieces |
-| `install.sh` / `uninstall.sh` | Local development helpers |
-| `tests/` | Unit tests for `Model.js` |
+| `Panel.qml` | The popup panel: Windows tab and Settings tab |
+| `Foreground.qml` | Hidden probe that exposes the bar's colours to the panel |
+| `SettingsStore.qml` | Settings kept in memory and saved to `window-dust.json` |
+| `Settings.js` | The list of settings the Settings tab is built from |
+| `Model.js` | Pure logic: settings, dust maths, particles, theme colours, Lua dispatchers |
+| `FieldBox.qml`, `FlatButton.qml`, `SectionLabel.qml` | Small UI pieces |
+| `tests/` | Unit tests for `Model.js` and `Settings.js` (`node tests/schema.test.js`) |
 
 ## Development
 
@@ -171,7 +194,7 @@ omarchy plugin validate .
 To lint the QML:
 
 ```bash
-qmllint -I "$OMARCHY_PATH/shell" BarWidget.qml Overlay.qml Panel.qml Chip.qml SettingStepper.qml
+qmllint -I "$OMARCHY_PATH/shell" BarWidget.qml Overlay.qml Panel.qml Foreground.qml SettingsStore.qml FieldBox.qml FlatButton.qml SectionLabel.qml
 ```
 
 ## Updating

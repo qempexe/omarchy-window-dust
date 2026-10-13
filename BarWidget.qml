@@ -3,15 +3,68 @@ import Quickshell
 import Quickshell.Io
 import Quickshell.Hyprland
 import Quickshell.Wayland
+import qs.Commons
 import qs.Ui
 import "Model.js" as Model
 
+// Window Dust: windows you have not touched slowly fade and gather dust.
+// Click the bar icon for the panel; right-click dusts everything off; middle-click pauses.
 BarWidget {
   id: root
   moduleName: "io.github.qempexe.window-dust"
 
-  property var dustConfig: Model.normalizeConfig({})
+  // ---- Settings ---------------------------------------------------------
+  // Kept in memory (instant) and saved to window-dust.json, which is also watched,
+  // so a hand edit applies live. Nothing is sent to `omarchy bar set`.
+  SettingsStore { id: settingsStore }
 
+  readonly property var dustConfig: Model.normalizeConfig(settingsStore.values)
+  readonly property var cfg: dustConfig
+
+  function setValue(key, value) { settingsStore.set(key, value) }
+  function setValues(patch) { settingsStore.setMany(patch) }
+  function resetAll() { settingsStore.reset() }
+  function toggleExempt(cls) { setValue("exempt", Model.toggleExempt(cfg.exempt, cls)) }
+
+  // The engine restarts (particles respawn, Hyprland props are re-applied) only when a
+  // setting that affects it changed, never for a theme or bar-icon change.
+  property string engineSig: ""
+  onDustConfigChanged: {
+    var sig = Model.engineKey(dustConfig)
+    if (sig === engineSig) return
+    engineSig = sig
+    if (loaded) applyEngine()
+  }
+  function applyEngine() {
+    applied = ({})
+    particleSets = ({})
+    recompute()
+  }
+
+  // ---- Colours ----------------------------------------------------------
+  property string themeAccent: ""             // accent of the active Omarchy theme, or ""
+  readonly property var colors: Model.resolveColors(cfg, themeAccent)
+
+  readonly property string home: Quickshell.env("HOME") || ""
+  readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME") || (home + "/.config")
+  readonly property string omarchyConfig: configHome + "/omarchy"
+
+  FileView {
+    id: themeColors
+    path: root.omarchyConfig + "/current/theme/colors.toml"
+    onLoaded: root.themeAccent = Model.parseAccent(text())
+    onLoadFailed: root.themeAccent = ""
+  }
+  // A theme switch is not atomic, so read again shortly after the name changes.
+  FileView {
+    id: themeNameFile
+    path: root.omarchyConfig + "/current/theme.name"
+    watchChanges: true
+    onFileChanged: { reload(); themeColors.reload(); themeSettle.restart() }
+  }
+  Timer { id: themeSettle; interval: 600; onTriggered: themeColors.reload() }
+
+  // ---- Dust state -------------------------------------------------------
   property real dustClock: 0
   property real lastTick: Date.now()
   property real lastPersist: 0
@@ -21,7 +74,7 @@ BarWidget {
   property var dustEntries: []
   property int dustyCount: 0
   property bool loaded: false
-  property bool pendingSave: false
+  property bool stateLoaded: false
 
   // ---- Particle layer ---------------------------------------------------
   property var particleSets: ({})
@@ -31,32 +84,46 @@ BarWidget {
   property var activeWorkspaceByMonitor: ({})
   property var visibleAddresses: ({})
   property var monitorInfoByOutput: ({})   // output name -> Hyprland monitor record
+  property var fullscreenMonitors: ({})    // Hyprland monitor id -> true while a window is fullscreen there
+  property var dustLevels: ({})            // window address -> dust level 0..1
 
   readonly property real dustyThreshold: 0.25
 
   readonly property string signature: Quickshell.env("HYPRLAND_INSTANCE_SIGNATURE") || ""
-  readonly property string home: Quickshell.env("HOME") || ""
-  readonly property string configFile:
-    (Quickshell.env("XDG_CONFIG_HOME") || (home + "/.config")) + "/omarchy/window-dust.json"
   readonly property string stateFile:
     (Quickshell.env("XDG_STATE_HOME") || (home + "/.local/state"))
     + "/omarchy-window-dust/state.json"
 
   // ---- Panel plumbing ---------------------------------------------------
+  // Panel.qml is its own popup window; Foreground.qml only exposes the bar's colours to it.
   readonly property bool opened: panelLoader.item ? panelLoader.item.opened === true : false
-  readonly property bool popoutSwitchClosing: panelLoader.item
-    ? panelLoader.item.popoutSwitchClosing === true : false
-
-  function open() { if (panelLoader.item) panelLoader.item.open() }
+  function open() { openTab("windows") }
   function close() { if (panelLoader.item) panelLoader.item.close() }
   function toggle() { if (panelLoader.item) panelLoader.item.toggle() }
-  function closeForPopoutSwitch() { if (panelLoader.item) panelLoader.item.closeForPopoutSwitch() }
+
+  function openTab(tab) {
+    if (!panelLoader.item) return
+    panelLoader.item.currentTab = tab
+    // If the compositor dismissed the popup on click-outside, Panel's controller can still
+    // think it is showing. Closing first gives a clean "hidden" state before opening.
+    if (panelLoader.item.opened) panelLoader.item.close()
+    Qt.callLater(function () { if (panelLoader.item) panelLoader.item.open() })
+  }
+
+  readonly property bool isVertical: {
+    var b = root.bar
+    if (!b) return false
+    try { return b.vertical === true || b.isVertical === true } catch (e) { return false }
+  }
 
   function injectPanel() {
     if (!panelLoader.item) return
     panelLoader.item.bar = root.bar
     panelLoader.item.anchorItem = button
     panelLoader.item.hostWidget = root
+    panelLoader.item.widget = root
+    panelLoader.item.vertical = root.isVertical
+    if (fgProbe.item) fgProbe.item.bar = root.bar
   }
 
   implicitWidth: button.implicitWidth
@@ -70,6 +137,9 @@ BarWidget {
   function recompute() {
     dustEntries = Model.compute(lastTouched, dustClients, dustClock, dustConfig)
     dustyCount = dustEntries.filter(function (e) { return e.level >= dustyThreshold }).length
+    var lv = {}
+    for (var q = 0; q < dustEntries.length; q++) lv[dustEntries[q].address] = dustEntries[q].level
+    dustLevels = lv
 
     var next = {}
     for (var i = 0; i < dustEntries.length; i++) {
@@ -118,14 +188,24 @@ BarWidget {
     refreshVisibility()
   }
 
+  // A window is drawn on when it is on its monitor's active workspace and that
+  // monitor has no fullscreen window (the overlay would sit on top of it).
   function refreshVisibility() {
+    var fs = {}
+    if (dustConfig.hideOnFullscreen) {
+      for (var j = 0; j < dustEntries.length; j++) {
+        var f = dustEntries[j]
+        if (f.fullscreen && activeWorkspaceByMonitor[f.monitor] === f.workspace) fs[f.monitor] = true
+      }
+    }
     var v = {}
     for (var i = 0; i < dustEntries.length; i++) {
       var e = dustEntries[i]
       var activeWs = activeWorkspaceByMonitor[e.monitor]
-      v[e.address] = (activeWs !== undefined && e.workspace === activeWs)
+      v[e.address] = (activeWs !== undefined && e.workspace === activeWs && fs[e.monitor] !== true)
     }
     visibleAddresses = v
+    if (JSON.stringify(fs) !== JSON.stringify(fullscreenMonitors)) fullscreenMonitors = fs
   }
 
   function touch(address) {
@@ -170,12 +250,11 @@ BarWidget {
                    monitor: e.monitor, workspace: e.workspace }
 
       var set = particleSets[e.address]
-      var want = Model.particleCount(e.w, e.h, dustConfig)
+      var wantDust = Model.particleCount(e.w, e.h, dustConfig)
+      var wantSpiders = Model.spiderCount(e.w, e.h, dustConfig)
 
       if (!set) {
-        set = want > 0
-          ? Model.spawnParticles(want, e.x, e.y, e.w, e.h, dustConfig)
-          : []
+        set = Model.resizeSet([], wantDust, wantSpiders, e.x, e.y, e.w, e.h, dustConfig)
       } else {
         // If the window moved or resized since last frame, remap particles
         // proportionally into the new rect before growing/trimming.
@@ -184,16 +263,8 @@ BarWidget {
           Model.remapParticles(set, oldG.x, oldG.y, oldG.w, oldG.h,
                                e.x, e.y, e.w, e.h)
         }
-        if (set.length !== want) {
-          if (want === 0) {
-            set = []
-          } else if (set.length < want) {
-            var more = Model.spawnParticles(want - set.length, e.x, e.y, e.w, e.h, dustConfig)
-            set = set.concat(more)
-          } else {
-            set = set.slice(0, want)
-          }
-        }
+        if (set.length !== wantDust + wantSpiders)
+          set = Model.resizeSet(set, wantDust, wantSpiders, e.x, e.y, e.w, e.h, dustConfig)
       }
       nextSets[e.address] = set
       nextGeom[e.address] = newG
@@ -233,46 +304,7 @@ BarWidget {
     Model.scatterParticles(set, g.x + g.w / 2, g.y + g.h / 2, 1.0)
   }
 
-  // ---- Settings ---------------------------------------------------------
-  function applyConfig(cfg) {
-    dustConfig = cfg
-    applied = ({})
-    particleSets = ({})
-    recompute()
-  }
-
-  function setConfig(patch) {
-    applyConfig(Model.normalizeConfig(Object.assign({}, dustConfig, patch)))
-    saveConfig()
-  }
-
-  function toggleExempt(cls) {
-    setConfig({ exempt: Model.toggleExempt(dustConfig.exempt, cls) })
-  }
-
-  function saveConfig() {
-    if (cfgWriter.running) { pendingSave = true; return }
-    pendingSave = false
-    cfgWriter.command = ["sh", "-c",
-      'mkdir -p "$(dirname "$1")" && printf %s "$2" > "$1"', "sh", configFile,
-      JSON.stringify(dustConfig, null, 2) + "\n"]
-    cfgWriter.running = true
-  }
-
-  function reloadConfig() {
-    if (!loaded || cfgWriter.running || pendingSave || cfgReader.running) return
-    cfgReader.running = true
-  }
-
-  function onConfigText(text) {
-    if (String(text).trim() === "") return
-    var raw
-    try { raw = JSON.parse(text) } catch (err) { return }
-    var cfg = Model.normalizeConfig(raw)
-    if (JSON.stringify(cfg) !== JSON.stringify(dustConfig)) applyConfig(cfg)
-  }
-
-  // ---- Persistence ------------------------------------------------------
+  // ---- Persistence (dust clock + last-touched times; settings live in SettingsStore) ----
   function persist() {
     if (!loaded || stateWriter.running) return
     stateWriter.command = ["sh", "-c",
@@ -281,32 +313,27 @@ BarWidget {
     stateWriter.running = true
   }
 
-  readonly property string bootMarker: "\n@@STATE@@\n"
-
   function onBoot(text) {
-    if (loaded) return
-    var at = text.indexOf(bootMarker)
-    var cfgText = at >= 0 ? text.slice(0, at) : text
-    var stateText = at >= 0 ? text.slice(at + bootMarker.length) : ""
-
-    var haveConfigFile = String(cfgText).trim() !== ""
-    try { dustConfig = Model.normalizeConfig(JSON.parse(cfgText)) } catch (err) { }
-
+    if (stateLoaded) return
     try {
-      var s = JSON.parse(stateText)
+      var s = JSON.parse(text)
       if (s && s.sig === signature && typeof s.clock === "number") {
         dustClock = s.clock
         lastTouched = s.last || {}
       }
-    } catch (err2) { }
-
-    start()
-    if (!haveConfigFile) saveConfig()
+    } catch (err) { }
+    stateLoaded = true
+    maybeStart()
   }
+
+  // Start once both the saved dust state and the saved settings have been read, so the
+  // first pass already uses the real settings and nothing flickers.
+  function maybeStart() { if (stateLoaded && settingsStore.loaded) start() }
 
   function start() {
     if (loaded) return
     loaded = true
+    engineSig = Model.engineKey(dustConfig)
     lastTick = Date.now()
     clientsProc.running = true
     monitorsProc.running = true
@@ -315,20 +342,16 @@ BarWidget {
     heartbeatTimer.start()
   }
 
-  Process { id: stateWriter }
-  Process { id: cfgWriter; onExited: { if (root.pendingSave) root.saveConfig() } }
-
-  Process {
-    id: cfgReader
-    command: ["cat", root.configFile]
-    stdout: StdioCollector { onStreamFinished: root.onConfigText(text) }
+  Connections {
+    target: settingsStore
+    function onLoadedChanged() { root.maybeStart() }
   }
+
+  Process { id: stateWriter }
 
   Process {
     id: bootRead
-    command: ["sh", "-c",
-      'cat "$1" 2>/dev/null; printf "\\n@@STATE@@\\n"; cat "$2" 2>/dev/null',
-      "sh", root.configFile, root.stateFile]
+    command: ["sh", "-c", 'cat "$1" 2>/dev/null', "sh", root.stateFile]
     stdout: StdioCollector { onStreamFinished: root.onBoot(text) }
   }
 
@@ -402,12 +425,16 @@ BarWidget {
           root.touch(addr)
         }
         break
+      case "fullscreen":
+        // read the clients straight away so the dust vanishes (or returns) at once
+        if (!clientsProc.running) clientsProc.running = true
+        refreshTimer.restart()
+        break
       case "openwindow":
       case "closewindow":
       case "movewindow":
       case "movewindowv2":
       case "changefloatingmode":
-      case "fullscreen":
       case "minimize":
         refreshTimer.restart()
         break
@@ -455,6 +482,17 @@ BarWidget {
     }
   }
 
+  // Exposes the bar's own colours to the popup (see Foreground.qml).
+  Loader {
+    id: fgProbe
+    active: true
+    source: Qt.resolvedUrl("Foreground.qml")
+    visible: false
+    onLoaded: root.injectPanel()
+  }
+  Binding { target: panelLoader.item; property: "probeFg"; value: fgProbe.item ? fgProbe.item.barForeground : undefined; when: !!panelLoader.item && !!fgProbe.item }
+  Binding { target: panelLoader.item; property: "probeBg"; value: fgProbe.item ? fgProbe.item.barBackground : undefined; when: !!panelLoader.item && !!fgProbe.item }
+
   Loader {
     id: panelLoader
     active: true
@@ -470,16 +508,17 @@ BarWidget {
     id: button
     anchors.fill: parent
     bar: root.bar
-    text: "\uDB80\uDCE2" + (!root.dustConfig.enabled ? " off"
-      : (root.dustyCount > 0 ? " " + root.dustyCount : ""))
-    tooltipText: !root.dustConfig.enabled
+    text: root.cfg.barIcon + (!root.cfg.enabled ? " off"
+      : (root.cfg.barShowCount && root.dustyCount > 0 ? " " + root.dustyCount : ""))
+    tooltipText: !root.cfg.enabled
       ? "Window Dust is paused (middle-click to resume)"
       : (root.dustyCount === 0 ? "No dusty windows"
         : root.dustyCount + (root.dustyCount === 1 ? " dusty window" : " dusty windows"))
+        + "\nLeft click: panel. Middle click: pause. Right click: dust everything off."
     onPressed: function (buttonCode) {
       if (buttonCode === Qt.LeftButton) root.toggle()
       else if (buttonCode === Qt.RightButton) root.wipeAll()
-      else if (buttonCode === Qt.MiddleButton) root.setConfig({ enabled: !root.dustConfig.enabled })
+      else if (buttonCode === Qt.MiddleButton) root.setValue("enabled", !root.cfg.enabled)
     }
   }
 }
