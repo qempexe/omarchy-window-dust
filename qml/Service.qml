@@ -177,11 +177,13 @@ Item {
                 if (f.fullscreen && root.activeWorkspace[f.monitor] === f.workspace) fs[f.monitor] = true
             }
         }
+        const now = Date.now()
         const v = {}
         for (let j = 0; j < root.entries.length; j++) {
             const e = root.entries[j]
             const ws = root.activeWorkspace[e.monitor]
-            v[e.address] = ws !== undefined && (e.workspace === ws || e.pinned) && fs[e.monitor] !== true
+            const sliding = (root.settling[e.monitor] || root.settling.all || 0) > now
+            v[e.address] = ws !== undefined && (e.workspace === ws || e.pinned) && fs[e.monitor] !== true && !sliding
         }
         root.shown = v
         if (JSON.stringify(fs) !== JSON.stringify(root.fullscreenMonitors)) root.fullscreenMonitors = fs
@@ -195,6 +197,25 @@ Item {
         root.clients = list.filter(c => c && typeof c.address === "string" && c.mapped !== false && c.hidden !== true)
         root.lastTouched = Model.reconcile(root.lastTouched, root.clients, root.dustClock)
         root.recompute()
+    }
+
+    // While a workspace slides in or out, the windows move without Hyprland saying where,
+    // so their dust is hidden on that screen until the windows have arrived.
+    property var settling: ({})                 // monitor id (or "all") -> time the slide ends
+    property int focusedMonitor: -1
+    readonly property int slideMs: 450
+    function settle(monitor) {
+        const next = {}
+        for (const k in root.settling) next[k] = root.settling[k]
+        next[monitor >= 0 ? monitor : "all"] = Date.now() + root.slideMs
+        root.settling = next
+        root.refreshShown()
+        settleTimer.restart()
+    }
+    Timer {
+        id: settleTimer
+        interval: root.slideMs + 30
+        onTriggered: { root.settling = ({}); root.poll() }
     }
 
     // Shell panels and popups (layers) in front of the windows: their rectangles are
@@ -217,6 +238,7 @@ Item {
             const m = list[i]
             const id = m.activeWorkspace && typeof m.activeWorkspace.id === "number" ? m.activeWorkspace.id : -1
             ws[m.id] = id
+            if (m.focused === true) root.focusedMonitor = m.id
             byName[m.name] = { id: m.id, x: m.x, y: m.y, w: m.width, h: m.height }
         }
         root.activeWorkspace = ws
@@ -419,8 +441,22 @@ Item {
             case "openlayer": case "closelayer":
                 refreshSoon.restart()
                 break
-            case "workspace": case "workspacev2": case "focusedmon": case "focusedmonv2":
-            case "moveworkspace": case "moveworkspacev2":
+            case "focusedmonv2": {
+                // "monitor name,workspace id": the next workspace event is about this one
+                const mon = root.monitors[data.split(",")[0]]
+                if (mon) root.focusedMonitor = mon.id
+                root.poll()
+                break
+            }
+            case "workspacev2":
+                root.settle(root.focusedMonitor)
+                root.poll()
+                break
+            case "moveworkspacev2": case "activespecialv2":
+                root.settle(-1)
+                root.poll()
+                break
+            case "workspace": case "focusedmon": case "moveworkspace":
                 root.poll()
                 break
             case "configreloaded":
