@@ -1,14 +1,15 @@
 import QtQuick
 import Quickshell
 import Quickshell.Io
-import "../js/Schema.js" as Schema
 
-// The settings, kept in memory (instant) and saved to window-dust.json in the Omarchy
-// config folder. The file is watched, so a hand edit applies live. Nothing is sent to
-// `omarchy bar set`: that rewrites the shell config and makes the whole shell reload.
+// Local overrides for widget settings, kept in memory (instant) and saved to
+// window-dust.json in the omarchy config dir (survives restarts). Local overrides win over
+// setting(...). Nothing is sent to `omarchy bar set`: that rewrites the shell
+// config and makes the whole shell reload and freeze.
 Item {
     id: root
 
+    property string pluginId: "io.github.qempexe.window-dust"
     // Same file Window Dust has always used, so existing settings carry over and
     // hand edits are picked up live (the file is watched below).
     property string stateDir: (Quickshell.env("XDG_CONFIG_HOME")
@@ -28,30 +29,20 @@ Item {
     // Which key was just edited ("*" = many keys or an external edit).
     signal keyChanged(string key)
 
-    // only real settings, so odd names in a hand-edited file never end up in here
-    function known(obj) {
-        const out = {}
-        for (let i = 0; i < Schema.settingKeys.length; i++) {
-            const k = Schema.settingKeys[i]
-            if (obj[k] !== undefined && typeof obj[k] !== "function") out[k] = obj[k]
-        }
-        return out
-    }
-
     function get(key) {
-        let v = values[key]
+        var v = values[key]
         return v === undefined ? null : v
     }
 
     function set(key, value) {
-        let next = {}
-        for (let k in values) next[k] = values[k]
+        var next = {}
+        for (var k in values) next[k] = values[k]
         if (value === null || value === undefined) delete next[key]
         else next[key] = value
         values = next
         if (!loaded && !pendingAll) {
-            let p = {}
-            for (let pk in pending) p[pk] = pending[pk]
+            var p = {}
+            for (var pk in pending) p[pk] = pending[pk]
             p[key] = (value === undefined) ? null : value
             pending = p
         }
@@ -62,17 +53,17 @@ Item {
 
     // Several keys at once (a preset): one write, one change signal.
     function setMany(patch) {
-        let next = {}
-        for (let k in values) next[k] = values[k]
-        for (let pk in patch) {
+        var next = {}
+        for (var k in values) next[k] = values[k]
+        for (var pk in patch) {
             if (patch[pk] === null || patch[pk] === undefined) delete next[pk]
             else next[pk] = patch[pk]
         }
         values = next
         if (!loaded && !pendingAll) {
-            let p = {}
-            for (let ek in pending) p[ek] = pending[ek]
-            for (let mk in patch) p[mk] = (patch[mk] === undefined) ? null : patch[mk]
+            var p = {}
+            for (var ek in pending) p[ek] = pending[ek]
+            for (var mk in patch) p[mk] = (patch[mk] === undefined) ? null : patch[mk]
             pending = p
         }
         persist()
@@ -90,8 +81,8 @@ Item {
 
     // Back to the given defaults (stored explicitly, so nothing else shows through).
     function resetAll(defaults) {
-        let next = {}
-        for (let k in defaults) next[k] = defaults[k]
+        var next = {}
+        for (var k in defaults) next[k] = defaults[k]
         values = next
         if (!loaded) pendingAll = true
         persist()
@@ -124,8 +115,8 @@ Item {
         if (!dirty) return
         dirty = false
         lastWrite = Date.now()
-        let text = JSON.stringify(values, null, 2) + "\n"
-        let r = recent.slice(-7)
+        var text = JSON.stringify(values, null, 2) + "\n"
+        var r = recent.slice(-7)
         r.push(text)
         recent = r
         echoTimer.restart()
@@ -133,7 +124,7 @@ Item {
     }
 
     function absorb(text) {
-        let raw = String(text || "")
+        var raw = String(text || "")
         if (loaded) {
             // While our own write is pending or still settling, whatever the file
             // watcher reports is ours (it can even be a half-written or empty
@@ -141,26 +132,26 @@ Item {
             if (dirty || writeTimer.running || echoTimer.running) return
             if (recent.indexOf(raw) >= 0) return
         }
-        let next = null
+        var next = null
         try {
-            const parsed = JSON.parse(raw)
-            if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) next = root.known(Schema.migrate(parsed))
+            var parsed = JSON.parse(raw)
+            if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) next = parsed
         } catch (e) { }
-        let wasLoaded = loaded
+        var wasLoaded = loaded
         if (!wasLoaded) {
             // First read: saved file + anything edited before it arrived.
-            let merged = {}
+            var merged = {}
             if (!pendingAll && next !== null)
-                for (let fk in next) merged[fk] = next[fk]
+                for (var fk in next) merged[fk] = next[fk]
             if (pendingAll) {
-                for (let vk in values) merged[vk] = values[vk]
+                for (var vk in values) merged[vk] = values[vk]
             } else {
-                for (let pk in pending) {
+                for (var pk in pending) {
                     if (pending[pk] === null) delete merged[pk]
                     else merged[pk] = pending[pk]
                 }
             }
-            let touched = pendingAll || Object.keys(pending).length > 0
+            var touched = pendingAll || Object.keys(pending).length > 0
             values = merged
             pending = ({})
             pendingAll = false

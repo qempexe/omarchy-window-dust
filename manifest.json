@@ -2,30 +2,19 @@
   "schemaVersion": 1,
   "id": "io.github.qempexe.window-dust",
   "name": "Window Dust",
-  "version": "2.0.0",
+  "version": "1.0.0",
   "author": "qempexe",
   "license": "MIT",
-  "description": "Windows you leave alone slowly fade and gather dust: a fine powder, drifting motes, grime, lint, cobwebs and little spiders. Focus one and the dust flies off. Four speeds to start from, every effect on its own switch, and a panel that follows your theme.",
+  "description": "Windows you have not touched slowly fade and gather real dust motes; focusing one blows them clean. Fully configurable, with a themed panel.",
   "kinds": [
-    "service",
     "bar-widget"
   ],
-  "keepLoaded": true,
   "entryPoints": {
-    "service": "qml/Service.qml",
-    "barWidget": "qml/BarWidget.qml"
+    "barWidget": "BarWidget.qml"
   },
   "barWidget": {
     "displayName": "Window Dust",
     "category": "Desktop",
-    "description": "How many windows are dusty, and the panel to tune the dust",
-    "aliases": [
-      "dust",
-      "window dust",
-      "cobwebs",
-      "spiders",
-      "idle windows"
-    ],
     "allowMultiple": false,
     "defaultSection": "right"
   }
