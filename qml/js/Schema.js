@@ -116,7 +116,7 @@ var groups = [
         min: 10, max: 60, round: true, options: [15, 24, 30, 60],
         hint: "How smoothly the dust moves. Fewer frames use less power. Nothing is drawn while no window is dusty.", when: particlesOn },
       { key: "occlude", section: "Motion", label: "Stay behind windows in front", kind: "bool", fallback: true,
-        hint: "A floating window over a dusty one stays clean.", when: particlesOn }
+        hint: "A floating window or a shell panel over a dusty window stays clean.", when: particlesOn }
     ]
   },
   {

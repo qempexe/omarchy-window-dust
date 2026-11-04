@@ -197,6 +197,17 @@ Item {
         root.recompute()
     }
 
+    // Shell panels and popups (layers) in front of the windows: their rectangles are
+    // kept clear of dust too, all but ones as big as their screen (those are
+    // click-through layers like this one, or a bar that spans the screen).
+    property var layers: []
+    function onLayers(text) {
+        let tree
+        try { tree = JSON.parse(text) } catch (err) { return }
+        const list = Model.frontLayers(tree, root.monitors, "window-dust-overlay")
+        if (JSON.stringify(list) !== JSON.stringify(root.layers)) { root.layers = list; root.layoutRev++ }
+    }
+
     function onMonitors(text) {
         let list
         try { list = JSON.parse(text) } catch (err) { return }
@@ -352,6 +363,7 @@ Item {
     function poll() {
         if (!clientsProc.running) clientsProc.running = true
         if (!monitorsProc.running) monitorsProc.running = true
+        if (!layersProc.running && root.cfg.particles) layersProc.running = true
     }
     Process {
         id: clientsProc
@@ -362,6 +374,11 @@ Item {
         id: monitorsProc
         command: ["hyprctl", "-j", "monitors"]
         stdout: StdioCollector { onStreamFinished: root.onMonitors(text) }
+    }
+    Process {
+        id: layersProc
+        command: ["hyprctl", "-j", "layers"]
+        stdout: StdioCollector { onStreamFinished: root.onLayers(text) }
     }
     // a burst of events is read once
     Timer { id: refreshSoon; interval: 150; onTriggered: root.poll() }
@@ -399,6 +416,7 @@ Item {
             case "openwindow": case "closewindow": case "movewindow": case "movewindowv2":
             case "changefloatingmode": case "minimized": case "pin":
             case "monitoradded": case "monitoraddedv2": case "monitorremoved": case "monitorremovedv2":
+            case "openlayer": case "closelayer":
                 refreshSoon.restart()
                 break
             case "workspace": case "workspacev2": case "focusedmon": case "focusedmonv2":

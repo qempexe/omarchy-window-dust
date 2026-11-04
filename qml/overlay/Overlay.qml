@@ -6,7 +6,7 @@ import "../js/Model.js" as Model
 // One click-through layer per screen, over the windows. Each dusty window on this
 // screen's workspace gets two canvases of its own size: the dust layer, drawn when the
 // dust changes, and the moving specks, drawn every frame while there are any. Small
-// canvases are fast to draw, and with nothing to draw the layer is not on screen at all.
+// canvases are fast to draw, and with nothing to draw nothing is drawn.
 PanelWindow {
     id: overlay
 
@@ -14,7 +14,10 @@ PanelWindow {
     readonly property var cfg: svc ? svc.cfg : null
 
     anchors { top: true; bottom: true; left: true; right: true }
-    WlrLayershell.layer: WlrLayer.Overlay
+    // Over the windows but under the shell's own panels and popups. It stays mapped
+    // while the screen has no fullscreen window, even with nothing to draw, so panels
+    // opened later are stacked in front of it.
+    WlrLayershell.layer: WlrLayer.Top
     WlrLayershell.namespace: "window-dust-overlay"
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
     WlrLayershell.exclusiveZone: -1
@@ -54,7 +57,7 @@ PanelWindow {
                 const s = svc.sets[e.address]
                 const drawn = s ? s.level : 0
                 if (e.level <= 0 && drawn <= 0.003) continue
-                const occ = cfg.occlude ? Model.occluders(e, entries, svc.shown) : []
+                const occ = cfg.occlude ? Model.occluders(e, entries, svc.shown).concat(Model.layerCovers(e, svc.layers)) : []
                 for (let k = 0; k < occ.length; k++) { occ[k][0] -= e.x; occ[k][1] -= e.y }
                 list.push(e.address)
                 g[e.address] = { level: e.level, x: e.x - originX, y: e.y - originY, w: e.w, h: e.h,
@@ -74,7 +77,7 @@ PanelWindow {
     onMonIdChanged: relayout()
     onCoveredChanged: relayout()
 
-    visible: addrs.length > 0 && !covered
+    visible: !covered
 
     // keep a window's dust inside it, and off the windows in front of it
     function clipTo(ctx, w, h, occ) {

@@ -161,6 +161,42 @@ function occluders(e, entries, shown) {
   return out;
 }
 
+// hyprctl -j layers -> the rectangles of the shell's panels in front of the windows
+// (the top and overlay levels), leaving out our own and any as big as its screen
+function frontLayers(tree, monitors, own) {
+  const out = [];
+  if (!tree || typeof tree !== "object") return out;
+  for (const name in tree) {
+    const mon = monitors ? monitors[name] : null;
+    const levels = tree[name] && tree[name].levels;
+    if (!mon || !levels || typeof levels !== "object") continue;
+    for (const lv of ["2", "3"]) {
+      const list = Array.isArray(levels[lv]) ? levels[lv] : [];
+      for (let i = 0; i < list.length; i++) {
+        const l = list[i];
+        if (!l || l.namespace === own) continue;
+        const w = Number(l.w) || 0, h = Number(l.h) || 0;
+        if (w < 2 || h < 2 || w * h >= mon.w * mon.h * 0.9) continue;
+        out.push({ monitor: mon.id, x: Number(l.x) || 0, y: Number(l.y) || 0, w: w, h: h });
+      }
+    }
+  }
+  return out;
+}
+
+// the parts of e that those panels cover, like occluders()
+function layerCovers(e, layers) {
+  const out = [];
+  for (let i = 0; i < (layers || []).length; i++) {
+    const a = layers[i];
+    if (a.monitor !== e.monitor) continue;
+    const x0 = Math.max(e.x, a.x), y0 = Math.max(e.y, a.y);
+    const x1 = Math.min(e.x + e.w, a.x + a.w), y1 = Math.min(e.y + e.h, a.y + a.h);
+    if (x1 - x0 > 1 && y1 - y0 > 1) out.push([x0, y0, x1 - x0, y1 - y0]);
+  }
+  return out;
+}
+
 // how dusty a window is right now, as words for the panel
 function stateText(e) {
   if (e.exempt) return "never dusted";
