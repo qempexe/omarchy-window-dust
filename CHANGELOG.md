@@ -1,21 +1,61 @@
-## 1.0.0
+# Changelog
 
-- New panel: its own popup window with a header card (on/off switch, status, close), Windows and Settings tabs, and a footer. Click outside or press Esc to close
-- Settings are now built from `Settings.js` and saved by `SettingsStore.qml` to the same `~/.config/omarchy/window-dust.json`; the file is watched, so hand edits apply live
-- Theme setting: Follow Omarchy (the bar's own colours plus your theme's accent), Custom (starts from a warm brown) or Monochrome
-- Preset chips, a hex field for the dust colour, a never-dusted list you can type into, a configurable bar icon and an option to hide the dusty count
-- New effect: **dust layer**, a fine powder over the whole window with a haze that settles toward the bottom and in the corners
-- New effect: **spiders** that crawl across dusty windows, pause, turn, and run from the focus point when you focus a window
-- New effect: **fibres** (drifting lint)
-- New settings: dust layer amount, spiders per window; presets set them too
-- Dust now disappears while a window is fullscreen and returns afterwards (new setting **Hide in fullscreen**, on by default)
-- Settings changes that only affect looks (theme, bar icon) no longer respawn the particles
-- `Foreground.qml`, `FieldBox.qml`, `FlatButton.qml` and `SectionLabel.qml` added; `Chip.qml` and `SettingStepper.qml` removed
-- Existing settings and dust state carry over unchanged; an old `brown` theme setting is read as Custom
+All notable changes to Window Dust. The format follows
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
+[Semantic Versioning](https://semver.org/).
 
-## 0.2.0
+## [2.0.0] - 2026-11-04
 
-- Fix particles not following window move/resize
-- Scale cobweb radius proportionally on resize instead of keeping spawn-time size
-- Fix multi-monitor leaking (particles on wrong screen)
-- Widen Hyprland event coverage and add 1.5 s heartbeat poll
+### Added
+
+- A new settings panel: seven tabs (Windows, Dust, Look, Particles, Behavior, Panel,
+  About), a search over every setting, **Changed only**, a reset arrow on each row,
+  and **Pop out** to turn it into a window of its own.
+- The Windows tab: every window with a dust meter and how long it has been left alone,
+  and buttons to wipe it, dust it at once, or never dust it.
+- Colors: **Follow theme**, **Window borders**, **Custom** and **Monochrome**.
+- **Stay behind windows in front**: a floating window over a dusty one stays clean.
+- **Never dust floating windows**.
+- **Frames per second** for the moving dust.
+- Right and middle click on the button can be set.
+- Commands: `omarchy-shell io.github.qempexe.window-dust windows | settings | clean |
+  pause | resume | toggle | preset <name> | status`.
+- A logo, light and dark, and an About tab.
+
+### Changed
+
+- The dust runs once for all bars and screens, as a service. With a bar on each screen
+  it used to run once per bar.
+- Each dusty window is drawn on canvases of its own size, and nothing is drawn, or on
+  screen, while no window is dusty. The windows are read rarely while nothing moves.
+- A wiped window's dust is seen flying off before it goes.
+- The never-dusted list is edited with chips and a field, with suggestions.
+
+### Fixed
+
+- **Follow theme** took no accent on Omarchy 4.5, where the theme moved.
+- On Omarchy 4.5 the panel could fail to open, where the bar window spans the screen.
+- Focusing a window showed no scatter: its dust was gone before it could fly off.
+
+## [1.0.0] - 2026-10-13
+
+### Added
+
+- A themed popup panel with Windows and Settings tabs, presets and live-reloaded
+  settings.
+- The dust layer, spiders and fibres.
+- **Hide in fullscreen**.
+
+## [0.2.0] - 2026-10-02
+
+### Fixed
+
+- Particles now follow a window that moves or is resized.
+- Cobwebs scale with the window.
+- Particles no longer show on the wrong screen.
+
+## [0.1.0] - 2026-10-02
+
+### Added
+
+- First release: windows that gather dust, and a bar button.
