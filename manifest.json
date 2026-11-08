@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.qempexe.window-dust",
   "name": "Window Dust",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "author": "qempexe",
   "license": "MIT",
   "description": "Windows you leave alone slowly fade and gather dust: a fine powder, drifting motes, grime, lint, cobwebs and little spiders. Focus one and the dust flies off. Four speeds to start from, every effect on its own switch, and a panel that follows your theme.",

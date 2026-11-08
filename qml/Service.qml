@@ -22,7 +22,7 @@ Item {
     property var manifest: null
 
     readonly property string pluginId: "io.github.qempexe.window-dust"
-    readonly property string version: manifest && manifest.version ? String(manifest.version) : "2.0.0"
+    readonly property string version: manifest && manifest.version ? String(manifest.version) : "2.0.1"
 
     // ---- settings ----------------------------------------------------------------------
     SettingsStore { id: settingsStore }
