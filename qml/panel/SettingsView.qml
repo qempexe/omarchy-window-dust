@@ -198,9 +198,9 @@ Item {
                     model: Schema.groups
                     delegate: Item {
                         readonly property bool on: index === root.group
-                        // each tab as wide as its name, the spare room shared out
+                        // Give every tab the same share of the row.
                         Layout.fillWidth: true
-                        Layout.preferredWidth: tabLabel.implicitWidth + ui.px(8)
+                        Layout.preferredWidth: parent.width / Schema.groups.length
                         Layout.fillHeight: true
 
                         Txt {
